@@ -3,3 +3,5 @@
 web
 project
 reporting-engine
+crm
+hr

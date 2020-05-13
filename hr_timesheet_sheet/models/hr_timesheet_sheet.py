@@ -1,16 +1,17 @@
 # Copyright 2018 Eficent Business and IT Consulting Services, S.L.
-# Copyright 2018-2019 Brainbean Apps (https://brainbeanapps.com)
+# Copyright 2018-2020 Brainbean Apps (https://brainbeanapps.com)
 # Copyright 2018-2019 Onestein (<https://www.onestein.eu>)
-# License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
+# License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 import babel.dates
 import logging
 import re
+from collections import namedtuple
 from datetime import datetime, time
-from dateutil.relativedelta import relativedelta
-from dateutil.rrule import (MONTHLY, WEEKLY)
+from dateutil.relativedelta import relativedelta, SU
+from dateutil.rrule import MONTHLY, WEEKLY
 
-from odoo import api, fields, models, _
+from odoo import api, fields, models, SUPERUSER_ID, _
 from odoo.exceptions import UserError, ValidationError
 
 _logger = logging.getLogger(__name__)
@@ -20,41 +21,31 @@ empty_name = '/'
 
 class Sheet(models.Model):
     _name = 'hr_timesheet.sheet'
+    _description = 'Timesheet Sheet'
     _inherit = ['mail.thread', 'mail.activity.mixin', 'portal.mixin']
     _table = 'hr_timesheet_sheet'
     _order = 'id desc'
-    _description = 'Timesheet Sheet'
+    _rec_name = 'complete_name'
 
     def _default_date_start(self):
-        user = self.env['res.users'].browse(self.env.uid)
-        r = user.company_id and user.company_id.sheet_range or WEEKLY
-        today = fields.Date.context_today(self)
-        if r == WEEKLY:
-            if user.company_id.timesheet_week_start:
-                delta = relativedelta(
-                    weekday=int(user.company_id.timesheet_week_start),
-                    days=6)
-            else:
-                delta = relativedelta(days=today.weekday())
-            return today - delta
-        elif r == MONTHLY:
-            return today + relativedelta(day=1)
-        return today
+        return self._get_period_start(
+            self.env.user.company_id,
+            fields.Date.context_today(self)
+        )
 
     def _default_date_end(self):
-        user = self.env['res.users'].browse(self.env.uid)
-        r = user.company_id and user.company_id.sheet_range or WEEKLY
-        today = fields.Date.context_today(self)
-        if r == WEEKLY:
-            if user.company_id.timesheet_week_start:
-                delta = relativedelta(weekday=(int(
-                    user.company_id.timesheet_week_start) + 6) % 7)
-            else:
-                delta = relativedelta(days=6-today.weekday())
-            return today + delta
-        elif r == MONTHLY:
-            return today + relativedelta(months=1, day=1, days=-1)
-        return today
+        return self._get_period_end(
+            self.env.user.company_id,
+            fields.Date.context_today(self)
+        )
+
+    def _selection_review_policy(self):
+        ResCompany = self.env['res.company']
+        return ResCompany._fields['timesheet_sheet_review_policy'].selection
+
+    def _default_review_policy(self):
+        company = self.env['res.company']._company_default_get()
+        return company.timesheet_sheet_review_policy
 
     def _default_employee(self):
         company = self.env['res.company']._company_default_get()
@@ -62,6 +53,9 @@ class Sheet(models.Model):
             ('user_id', '=', self.env.uid),
             ('company_id', 'in', [company.id, False]),
         ], limit=1, order="company_id ASC")
+
+    def _default_department_id(self):
+        return self._default_employee().department_id
 
     name = fields.Char(
         compute='_compute_name',
@@ -131,7 +125,7 @@ class Sheet(models.Model):
     state = fields.Selection([
         ('new', 'New'),
         ('draft', 'Open'),
-        ('confirm', 'Waiting Approval'),
+        ('confirm', 'Waiting Review'),
         ('done', 'Approved')],
         default='new', track_visibility='onchange',
         string='Status', required=True, readonly=True, index=True,
@@ -143,9 +137,24 @@ class Sheet(models.Model):
         required=True,
         readonly=True,
     )
+    review_policy = fields.Selection(
+        selection=lambda self: self._selection_review_policy(),
+        default=lambda self: self._default_review_policy(),
+        required=True,
+        readonly=True,
+    )
     department_id = fields.Many2one(
         comodel_name='hr.department',
         string='Department',
+        default=lambda self: self._default_department_id(),
+        readonly=True,
+        states={'new': [('readonly', False)]},
+    )
+    reviewer_id = fields.Many2one(
+        comodel_name='hr.employee',
+        string='Reviewer',
+        readonly=True,
+        track_visibility='onchange',
     )
     add_line_project_id = fields.Many2one(
         comodel_name='project.project',
@@ -163,11 +172,29 @@ class Sheet(models.Model):
         compute='_compute_total_time',
         store=True,
     )
+    can_review = fields.Boolean(
+        string='Can Review',
+        compute='_compute_can_review',
+        search='_search_can_review',
+    )
+    complete_name = fields.Char(
+        string='Complete Name',
+        compute='_compute_complete_name',
+    )
 
     @api.multi
     @api.depends('date_start', 'date_end')
     def _compute_name(self):
+        locale = self.env.context.get('lang') or self.env.user.lang or 'en_US'
         for sheet in self:
+            if sheet.date_start == sheet.date_end:
+                sheet.name = babel.dates.format_skeleton(
+                    skeleton='MMMEd',
+                    datetime=datetime.combine(sheet.date_start, time.min),
+                    locale=locale,
+                )
+                continue
+
             period_start = sheet.date_start.strftime(
                 '%V, %Y'
             )
@@ -175,14 +202,12 @@ class Sheet(models.Model):
                 '%V, %Y'
             )
 
-            if period_start == period_end:
-                sheet.name = '%s %s' % (
-                    _('Week'),
-                    period_start,
+            if sheet.date_end <= sheet.date_start + relativedelta(weekday=SU):
+                sheet.name = _('Week %s') % (
+                    period_end,
                 )
             else:
-                sheet.name = '%s %s - %s' % (
-                    _('Weeks'),
+                sheet.name = _('Weeks %s - %s') % (
                     period_start,
                     period_end,
                 )
@@ -192,6 +217,44 @@ class Sheet(models.Model):
         for sheet in self:
             sheet.total_time = sum(sheet.mapped('timesheet_ids.unit_amount'))
 
+    @api.multi
+    @api.depends('review_policy')
+    def _compute_can_review(self):
+        for sheet in self:
+            sheet.can_review = self.env.user in sheet._get_possible_reviewers()
+
+    @api.model
+    def _search_can_review(self, operator, value):
+
+        def check_in(users):
+            return self.env.user in users
+
+        def check_not_in(users):
+            return self.env.user not in users
+
+        if (operator == '=' and value) \
+                or (operator in ['<>', '!='] and not value):
+            check = check_in
+        else:
+            check = check_not_in
+
+        sheets = self.search([]).filtered(
+            lambda sheet: check(sheet._get_possible_reviewers())
+        )
+        return [('id', 'in', sheets.ids)]
+
+    @api.depends('name', 'employee_id')
+    def _compute_complete_name(self):
+        for sheet in self:
+            complete_name = sheet.name
+            complete_name_components = sheet._get_complete_name_components()
+            if complete_name_components:
+                complete_name = '%s (%s)' % (
+                    complete_name,
+                    ', '.join(complete_name_components)
+                )
+            sheet.complete_name = complete_name
+
     @api.constrains('date_start', 'date_end')
     def _check_start_end_dates(self):
         for sheet in self:
@@ -199,26 +262,44 @@ class Sheet(models.Model):
                 raise ValidationError(
                     _('The start date cannot be later than the end date.'))
 
-    @api.constrains('date_start', 'date_end', 'employee_id')
-    def _check_sheet_date(self, forced_user_id=False):
+    @api.multi
+    def _get_complete_name_components(self):
+        """ Hook for extensions """
+        self.ensure_one()
+        return [self.employee_id.name_get()[0][1]]
+
+    @api.multi
+    def _get_overlapping_sheet_domain(self):
+        """ Hook for extensions """
+        self.ensure_one()
+        return [
+            ('id', '!=', self.id),
+            ('date_start', '<=', self.date_end),
+            ('date_end', '>=', self.date_start),
+            ('employee_id', '=', self.employee_id.id),
+            ('company_id', '=', self._get_timesheet_sheet_company().id),
+        ]
+
+    @api.constrains(
+        'date_start',
+        'date_end',
+        'company_id',
+        'employee_id',
+        'review_policy',
+    )
+    def _check_overlapping_sheets(self):
         for sheet in self:
-            new_user_id = forced_user_id or sheet.user_id.id
-            if new_user_id:
-                self.env.cr.execute(
-                    """
-                    SELECT id
-                    FROM hr_timesheet_sheet
-                    WHERE (date_start <= %s and %s <= date_end)
-                        AND user_id=%s
-                        AND company_id=%s
-                        AND id <> %s""",
-                    (sheet.date_end, sheet.date_start, new_user_id,
-                     sheet.company_id.id, sheet.id))
-                if any(self.env.cr.fetchall()):
-                    raise ValidationError(
-                        _('You cannot have 2 sheets that overlap!\n'
-                          'Please use the menu \'Timesheet Sheet\' '
-                          'to avoid this problem.'))
+            overlapping_sheets = self.search(
+                sheet._get_overlapping_sheet_domain()
+            )
+            if overlapping_sheets:
+                raise ValidationError(_(
+                    'You cannot have 2 or more sheets that overlap!\n'
+                    'Please use the menu "Timesheet Sheet" '
+                    'to avoid this problem.\nConflicting sheets:\n - %s' % (
+                        '\n - '.join(overlapping_sheets.mapped('complete_name')),
+                    )
+                ))
 
     @api.multi
     @api.constrains('company_id', 'employee_id')
@@ -260,6 +341,15 @@ class Sheet(models.Model):
                     _('The Company in the Timesheet Sheet and in '
                       'the Task must be the same.'))
 
+    @api.multi
+    def _get_possible_reviewers(self):
+        self.ensure_one()
+        res = self.env['res.users'].browse(SUPERUSER_ID)
+        if self.review_policy == 'hr':
+            res |= self.env.ref('hr.group_hr_user').users
+        return res
+
+    @api.multi
     def _get_timesheet_sheet_company(self):
         self.ensure_one()
         employee = self.employee_id
@@ -271,17 +361,20 @@ class Sheet(models.Model):
     @api.onchange('employee_id')
     def _onchange_employee_id(self):
         if self.employee_id:
+            company = self._get_timesheet_sheet_company()
+            self.company_id = company
+            self.review_policy = company.timesheet_sheet_review_policy
             self.department_id = self.employee_id.department_id
-            self.company_id = self._get_timesheet_sheet_company()
 
+    @api.multi
     def _get_timesheet_sheet_lines_domain(self):
         self.ensure_one()
         return [
-            ('project_id', '!=', False),
             ('date', '<=', self.date_end),
             ('date', '>=', self.date_start),
             ('employee_id', '=', self.employee_id.id),
             ('company_id', '=', self._get_timesheet_sheet_company().id),
+            ('project_id', '!=', False),
         ]
 
     @api.multi
@@ -293,35 +386,81 @@ class Sheet(models.Model):
                 continue
             matrix = sheet._get_data_matrix()
             vals_list = []
-            for item in sorted(matrix, key=lambda l: self._sort_matrix(l)):
-                vals_list.append(sheet._get_default_sheet_line(matrix, item))
-                sheet.clean_timesheets(matrix[item])
+            for key in sorted(matrix,
+                              key=lambda key: self._get_matrix_sortby(key)):
+                vals_list.append(sheet._get_default_sheet_line(matrix, key))
+                if sheet.state in ['new', 'draft']:
+                    sheet.clean_timesheets(matrix[key])
             sheet.line_ids = SheetLine.create(vals_list)
 
-    def _sort_matrix(self, line):
-        return [line[0], line[1].name, line[2].name or '']
+    @api.model
+    def _matrix_key_attributes(self):
+        """ Hook for extensions """
+        return ['date', 'project_id', 'task_id']
 
+    @api.model
+    def _matrix_key(self):
+        return namedtuple('MatrixKey', self._matrix_key_attributes())
+
+    @api.model
+    def _get_matrix_key_values_for_line(self, aal):
+        """ Hook for extensions """
+        return {
+            'date': aal.date,
+            'project_id': aal.project_id,
+            'task_id': aal.task_id,
+        }
+
+    @api.model
+    def _get_matrix_sortby(self, key):
+        res = []
+        for attribute in key:
+            value = None
+            if hasattr(attribute, 'name_get'):
+                name = attribute.name_get()
+                value = name[0][1] if name else ''
+            else:
+                value = attribute
+            res.append(value)
+        return res
+
+    @api.multi
     def _get_data_matrix(self):
         self.ensure_one()
+        MatrixKey = self._matrix_key()
         matrix = {}
         empty_line = self.env['account.analytic.line']
         for line in self.timesheet_ids:
-            data_key = (line.date, line.project_id, line.task_id)
-            if data_key not in matrix:
-                matrix[data_key] = empty_line
-            matrix[data_key] += line
+            key = MatrixKey(**self._get_matrix_key_values_for_line(line))
+            if key not in matrix:
+                matrix[key] = empty_line
+            matrix[key] += line
         for date in self._get_dates():
-            for item in matrix.copy():
-                if (date, item[1], item[2]) not in matrix:
-                    matrix[(date, item[1], item[2])] = empty_line
+            for key in matrix.copy():
+                key = MatrixKey(**{
+                    **key._asdict(),
+                    'date': date,
+                })
+                if key not in matrix:
+                    matrix[key] = empty_line
         return matrix
 
+    def _compute_timesheet_ids(self):
+        AccountAnalyticLines = self.env['account.analytic.line']
+        for sheet in self:
+            domain = sheet._get_timesheet_sheet_lines_domain()
+            timesheets = AccountAnalyticLines.search(domain)
+            sheet.link_timesheets_to_sheet(timesheets)
+            sheet.timesheet_ids = timesheets
+
     @api.onchange('date_start', 'date_end', 'employee_id')
+    def _onchange_scope(self):
+        self._compute_timesheet_ids()
+
+    @api.onchange('date_start', 'date_end')
     def _onchange_dates(self):
-        domain = self._get_timesheet_sheet_lines_domain()
-        timesheets = self.env['account.analytic.line'].search(domain)
-        self.link_timesheets_to_sheet(timesheets)
-        self.timesheet_ids = timesheets
+        if self.date_start > self.date_end:
+            self.date_end = self.date_start
 
     @api.onchange('timesheet_ids')
     def _onchange_timesheets(self):
@@ -347,6 +486,20 @@ class Sheet(models.Model):
                 },
             }
 
+    @api.model
+    def _check_employee_user_link(self, vals):
+        if 'employee_id' in vals:
+            employee = self.env['hr.employee'].browse(vals['employee_id'])
+            if not employee.user_id:
+                raise UserError(_(
+                    'In order to create a sheet for this employee, you must'
+                    ' link him/her to an user: %s'
+                ) % (
+                    employee.name,
+                ))
+            return employee.user_id.id
+        return False
+
     @api.multi
     def copy(self, default=None):
         if not self.env.context.get('allow_copy_timesheet'):
@@ -355,12 +508,7 @@ class Sheet(models.Model):
 
     @api.model
     def create(self, vals):
-        if 'employee_id' in vals:
-            employee = self.env['hr.employee'].browse(vals['employee_id'])
-            if not employee.user_id:
-                raise UserError(
-                    _('In order to create a sheet for this employee, '
-                      'you must link him/her to an user.'))
+        self._check_employee_user_link(vals)
         res = super().create(vals)
         res.write({'state': 'draft'})
         return res
@@ -370,14 +518,7 @@ class Sheet(models.Model):
 
     @api.multi
     def write(self, vals):
-        if 'employee_id' in vals:
-            new_user_id = self.env['hr.employee'].\
-                browse(vals['employee_id']).user_id.id
-            if not new_user_id:
-                raise UserError(
-                    _('In order to create a sheet for this employee, '
-                      'you must link him/her to an user.'))
-            self._check_sheet_date(forced_user_id=new_user_id)
+        self._check_employee_user_link(vals)
         res = super().write(vals)
         for rec in self:
             if rec.state == 'draft' and \
@@ -389,32 +530,42 @@ class Sheet(models.Model):
 
     @api.multi
     def unlink(self):
-        sheets = self.read(['state'])
-        for sheet in sheets:
-            if sheet['state'] in ('confirm', 'done'):
-                raise UserError(
-                    _('You cannot delete a timesheet sheet '
-                      'which is already confirmed.'))
-        analytic_timesheet_toremove = self.env['account.analytic.line']
         for sheet in self:
-            analytic_timesheet_toremove += \
-                sheet.timesheet_ids.filtered(lambda t: t.name == empty_name)
-        analytic_timesheet_toremove.unlink()
+            if sheet.state in ('confirm', 'done'):
+                raise UserError(_(
+                    'You cannot delete a timesheet sheet which is already'
+                    ' submitted or confirmed: %s') % (
+                        sheet.complete_name,
+                    ))
         return super().unlink()
+
+    def _get_informables(self):
+        """ Hook for extensions """
+        self.ensure_one()
+        return self.employee_id.parent_id.user_id.partner_id
+
+    def _get_subscribers(self):
+        """ Hook for extensions """
+        self.ensure_one()
+        subscribers = self._get_possible_reviewers().mapped('partner_id')
+        subscribers |= self._get_informables()
+        return subscribers
 
     def _timesheet_subscribe_users(self):
         for sheet in self.sudo():
-            manager = sheet.employee_id.parent_id.user_id.partner_id
-            if manager:
-                self.message_subscribe(partner_ids=manager.ids)
+            subscribers = sheet._get_subscribers()
+            if subscribers:
+                self.message_subscribe(partner_ids=subscribers.ids)
 
     @api.multi
     def action_timesheet_draft(self):
-        if not self.env.user.has_group('hr_timesheet.group_hr_timesheet_user'):
-            raise UserError(
-                _('Only an HR Officer or Manager can refuse sheets '
-                  'or reset them to draft.'))
-        self.write({'state': 'draft'})
+        if self.filtered(lambda sheet: sheet.state != 'done'):
+            raise UserError(_('Cannot revert to draft a non-approved sheet.'))
+        self._check_can_review()
+        self.write({
+            'state': 'draft',
+            'reviewer_id': False,
+        })
 
     @api.multi
     def action_timesheet_confirm(self):
@@ -424,16 +575,44 @@ class Sheet(models.Model):
 
     @api.multi
     def action_timesheet_done(self):
-        if not self.env.user.has_group('hr_timesheet.group_hr_timesheet_user'):
-            raise UserError(
-                _('Only an HR Officer or Manager can approve sheets.'))
         if self.filtered(lambda sheet: sheet.state != 'confirm'):
-            raise UserError(_("Cannot approve a non-submitted sheet."))
-        self.write({'state': 'done'})
+            raise UserError(_('Cannot approve a non-submitted sheet.'))
+        self._check_can_review()
+        self.write({
+            'state': 'done',
+            'reviewer_id': self._get_current_reviewer().id,
+        })
 
     @api.multi
     def action_timesheet_refuse(self):
-        return self.action_timesheet_draft()
+        if self.filtered(lambda sheet: sheet.state != 'confirm'):
+            raise UserError(_('Cannot reject a non-submitted sheet.'))
+        self._check_can_review()
+        self.write({
+            'state': 'draft',
+            'reviewer_id': False,
+        })
+
+    @api.model
+    def _get_current_reviewer(self):
+        reviewer = self.env['hr.employee'].search(
+            [('user_id', '=', self.env.uid)],
+            limit=1
+        )
+        if not reviewer:
+            raise UserError(_(
+                'In order to review a timesheet sheet, your user needs to be'
+                ' linked to an employee.'
+            ))
+        return reviewer
+
+    @api.multi
+    def _check_can_review(self):
+        if self.filtered(
+                lambda x: not x.can_review and x.review_policy == 'hr'):
+            raise UserError(_(
+                'Only a HR Officer or Manager can review the sheet.'
+            ))
 
     @api.multi
     def button_add_line(self):
@@ -452,7 +631,9 @@ class Sheet(models.Model):
         name = babel.dates.format_skeleton(
             skeleton='MMMEd',
             datetime=datetime.combine(date, time.min),
-            locale=self.env.context.get('lang') or 'en_US',
+            locale=(
+                self.env.context.get('lang') or self.env.user.lang or 'en_US'
+            ),
         )
         name = re.sub(r'(\s*[^\w\d\s])\s+', r'\1\n', name)
         name = re.sub(r'([\w\d])\s([\w\d])', u'\\1\u00A0\\2', name)
@@ -463,34 +644,42 @@ class Sheet(models.Model):
         end = self.date_end
         if end < start:
             return []
-        # time_period = end - start
-        # number_of_days = time_period/timedelta(days=1)
         dates = [start]
         while start != end:
             start += relativedelta(days=1)
             dates.append(start)
         return dates
 
-    def _get_line_name(self, project, task=None):
-        if task:
-            return '%s - %s' % (project.name, task.name)
+    @api.multi
+    def _get_line_name(self, project_id, task_id=None, **kwargs):
+        self.ensure_one()
+        if task_id:
+            return '%s - %s' % (
+                project_id.name_get()[0][1],
+                task_id.name_get()[0][1]
+            )
 
-        return project.name
+        return project_id.name_get()[0][1]
 
-    def _get_new_line_name(self):
-        return self._get_line_name(
-            self.add_line_project_id,
-            self.add_line_task_id,
-        )
+    @api.multi
+    def _get_new_line_unique_id(self):
+        """ Hook for extensions """
+        self.ensure_one()
+        return {
+            'project_id': self.add_line_project_id,
+            'task_id': self.add_line_task_id,
+        }
 
-    def _get_default_sheet_line(self, matrix, item):
+    @api.multi
+    def _get_default_sheet_line(self, matrix, key):
+        self.ensure_one()
         values = {
-            'value_x': self._get_date_name(item[0]),
-            'value_y': self._get_line_name(item[1], item[2]),
-            'date': item[0],
-            'project_id': item[1].id,
-            'task_id': item[2].id,
-            'unit_amount': sum(t.unit_amount for t in matrix[item]),
+            'value_x': self._get_date_name(key.date),
+            'value_y': self._get_line_name(**key._asdict()),
+            'date': key.date,
+            'project_id': key.project_id.id,
+            'task_id': key.task_id.id,
+            'unit_amount': sum(t.unit_amount for t in matrix[key]),
             'employee_id': self.employee_id.id,
             'company_id': self.company_id.id,
         }
@@ -512,15 +701,18 @@ class Sheet(models.Model):
         }
 
     def add_line(self):
-        if self.add_line_project_id:
-            values = self._prepare_empty_analytic_line()
-            name_line = self._get_new_line_name()
-            name_list = list(set(self.line_ids.mapped('value_y')))
-            if name_list:
-                self.delete_empty_lines(False)
-            if name_line not in name_list:
-                self.timesheet_ids |= \
-                    self.env['account.analytic.line'].create(values)
+        if not self.add_line_project_id:
+            return
+        values = self._prepare_empty_analytic_line()
+        new_line_unique_id = self._get_new_line_unique_id()
+        existing_unique_ids = list(set(
+            [frozenset(line.get_unique_id().items()) for line in self.line_ids]
+        ))
+        if existing_unique_ids:
+            self.delete_empty_lines(False)
+        if frozenset(new_line_unique_id.items()) not in existing_unique_ids:
+            self.timesheet_ids |= \
+                self.env['account.analytic.line']._sheet_create(values)
 
     def link_timesheets_to_sheet(self, timesheets):
         self.ensure_one()
@@ -534,27 +726,41 @@ class Sheet(models.Model):
             return repeated.merge_timesheets()
         return timesheets
 
+    @api.multi
+    def _is_add_line(self, row):
+        """ Hook for extensions """
+        self.ensure_one()
+        return self.add_line_project_id == row.project_id \
+            and self.add_line_task_id == row.task_id
+
+    @api.model
+    def _is_line_of_row(self, aal, row):
+        """ Hook for extensions """
+        return aal.project_id.id == row.project_id.id \
+            and aal.task_id.id == row.task_id.id
+
     def delete_empty_lines(self, delete_empty_rows=False):
+        self.ensure_one()
         for name in list(set(self.line_ids.mapped('value_y'))):
-            row = self.line_ids.filtered(lambda l: l.value_y == name)
-            if row:
-                row_0 = fields.first(row)
-                is_add_line = self.add_line_project_id == row_0.project_id \
-                    and self.add_line_task_id == row_0.task_id
-                if delete_empty_rows and is_add_line:
-                    check = any([l.unit_amount for l in row])
-                else:
-                    check = not all([l.unit_amount for l in row])
-                if check:
-                    ts_row = self.timesheet_ids.filtered(
-                        lambda t: t.project_id.id == row_0.project_id.id
-                        and t.task_id.id == row_0.task_id.id
-                    )
-                    ts_row.filtered(
-                        lambda t: t.name == empty_name and not t.unit_amount
-                    ).unlink()
-                    self._sheet_write(
-                        'timesheet_ids', self.timesheet_ids.exists())
+            rows = self.line_ids.filtered(lambda l: l.value_y == name)
+            if not rows:
+                continue
+            row = fields.first(rows)
+            if delete_empty_rows and self._is_add_line(row):
+                check = any([l.unit_amount for l in rows])
+            else:
+                check = not all([l.unit_amount for l in rows])
+            if not check:
+                continue
+            row_lines = self.timesheet_ids.filtered(
+                lambda aal: self._is_line_of_row(aal, row)
+            )
+            row_lines.filtered(
+                lambda t: t.name == empty_name and not t.unit_amount
+            ).unlink()
+            if self.timesheet_ids != self.timesheet_ids.exists():
+                self._sheet_write(
+                    'timesheet_ids', self.timesheet_ids.exists())
 
     @api.multi
     def _update_analytic_lines_from_new_lines(self, vals):
@@ -577,6 +783,7 @@ class Sheet(models.Model):
 
     @api.model
     def _prepare_new_line(self, line):
+        """ Hook for extensions """
         return {
             'sheet_id': line.sheet_id.id,
             'date': line.date,
@@ -588,13 +795,19 @@ class Sheet(models.Model):
         }
 
     @api.multi
+    def _is_compatible_new_line(self, line_a, line_b):
+        """ Hook for extensions """
+        self.ensure_one()
+        return line_a.project_id.id == line_b.project_id.id \
+            and line_a.task_id.id == line_b.task_id.id \
+            and line_a.date == line_b.date
+
+    @api.multi
     def add_new_line(self, line):
         self.ensure_one()
         new_line_model = self.env['hr_timesheet.sheet.new.analytic.line']
         new_line = self.new_line_ids.filtered(
-            lambda l: l.project_id.id == line.project_id.id
-            and l.task_id.id == line.task_id.id
-            and l.date == line.date
+            lambda l: self._is_compatible_new_line(l, line)
         )
         if new_line:
             new_line.write({'unit_amount': line.unit_amount})
@@ -604,18 +817,46 @@ class Sheet(models.Model):
         self._sheet_write('new_line_ids', self.new_line_ids | new_line)
         line.new_line_id = new_line.id
 
+    @api.model
+    def _get_period_start(self, company, date):
+        r = company and company.sheet_range or WEEKLY
+        if r == WEEKLY:
+            if company.timesheet_week_start:
+                delta = relativedelta(
+                    weekday=int(company.timesheet_week_start),
+                    days=6)
+            else:
+                delta = relativedelta(days=date.weekday())
+            return date - delta
+        elif r == MONTHLY:
+            return date + relativedelta(day=1)
+        return date
+
+    @api.model
+    def _get_period_end(self, company, date):
+        r = company and company.sheet_range or WEEKLY
+        if r == WEEKLY:
+            if company.timesheet_week_start:
+                delta = relativedelta(weekday=(int(
+                    company.timesheet_week_start) + 6) % 7)
+            else:
+                delta = relativedelta(days=6-date.weekday())
+            return date + delta
+        elif r == MONTHLY:
+            return date + relativedelta(months=1, day=1, days=-1)
+        return date
+
     # ------------------------------------------------
     # OpenChatter methods and notifications
     # ------------------------------------------------
 
     @api.multi
     def _track_subtype(self, init_values):
-        if self:
-            record = self[0]
-            if 'state' in init_values and record.state == 'confirm':
-                return 'hr_timesheet_sheet.mt_timesheet_confirmed'
-            elif 'state' in init_values and record.state == 'done':
-                return 'hr_timesheet_sheet.mt_timesheet_approved'
+        self.ensure_one()
+        if 'state' in init_values and self.state == 'confirm':
+            return 'hr_timesheet_sheet.mt_timesheet_confirmed'
+        elif 'state' in init_values and self.state == 'done':
+            return 'hr_timesheet_sheet.mt_timesheet_approved'
         return super()._track_subtype(init_values)
 
 
@@ -648,6 +889,15 @@ class AbstractSheetLine(models.AbstractModel):
         comodel_name='hr.employee',
         string='Employee',
     )
+
+    @api.multi
+    def get_unique_id(self):
+        """ Hook for extensions """
+        self.ensure_one()
+        return {
+            'project_id': self.project_id,
+            'task_id': self.task_id,
+        }
 
 
 class SheetLine(models.TransientModel):
@@ -694,12 +944,17 @@ class SheetNewAnalyticLine(models.TransientModel):
     _description = 'Timesheet Sheet New Analytic Line'
 
     @api.model
+    def _is_similar_analytic_line(self, aal):
+        """ Hook for extensions """
+        return aal.date == self.date \
+            and aal.project_id.id == self.project_id.id \
+            and aal.task_id.id == self.task_id.id
+
+    @api.model
     def _update_analytic_lines(self):
         sheet = self.sheet_id
         timesheets = sheet.timesheet_ids.filtered(
-            lambda t: t.date == self.date
-            and t.project_id.id == self.project_id.id
-            and t.task_id.id == self.task_id.id
+            lambda aal: self._is_similar_analytic_line(aal)
         )
         new_ts = timesheets.filtered(lambda t: t.name == empty_name)
         amount = sum(t.unit_amount for t in timesheets)
@@ -723,4 +978,4 @@ class SheetNewAnalyticLine(models.TransientModel):
                 'name': empty_name,
                 'unit_amount': diff_amount,
             })
-            self.env['account.analytic.line'].create(new_ts_values)
+            self.env['account.analytic.line']._sheet_create(new_ts_values)

@@ -1,5 +1,6 @@
 # Copyright 2018 Eficent Business and IT Consulting Services, S.L.
-# License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
+# Copyright 2019 Brainbean Apps (https://brainbeanapps.com)
+# License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from odoo import fields, models
 from dateutil.rrule import (MONTHLY, WEEKLY, DAILY)
@@ -30,3 +31,12 @@ class ResCompany(models.Model):
         selection=_WEEKDAYS,
         string='Week start day',
         default='0')
+
+    timesheet_sheet_review_policy = fields.Selection(
+        string='Timesheet Sheet Review Policy',
+        selection=[
+            ('hr', 'By HR Manager/Officer'),
+        ],
+        default='hr',
+        help='How Timesheet Sheets review is performed.',
+    )

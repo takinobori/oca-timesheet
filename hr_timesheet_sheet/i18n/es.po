@@ -132,8 +132,13 @@ msgstr "Por responsable directo"
 
 #. module: hr_timesheet_sheet
 #: selection:res.company,timesheet_sheet_review_policy:0
-msgid "By HR Manager/Officer"
-msgstr "Por Reponsable de RRHH"
+msgid "By HR Managers"
+msgstr ""
+
+#. module: hr_timesheet_sheet
+#: selection:res.company,timesheet_sheet_review_policy:0
+msgid "By HR Officers"
+msgstr ""
 
 #. module: hr_timesheet_sheet
 #: selection:res.company,timesheet_sheet_review_policy:0
@@ -141,24 +146,29 @@ msgid "By Project Manager"
 msgstr "Por responsable de proyecto"
 
 #. module: hr_timesheet_sheet
+#: selection:res.company,timesheet_sheet_review_policy:0
+msgid "By Timesheets Managers"
+msgstr ""
+
+#. module: hr_timesheet_sheet
 #: model:ir.model.fields,field_description:hr_timesheet_sheet.field_hr_timesheet_sheet__can_review
 msgid "Can Review"
 msgstr "Puede revisar"
 
 #. module: hr_timesheet_sheet
-#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:579
+#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:583
 #, python-format
 msgid "Cannot approve a non-submitted sheet."
 msgstr "No es posible aprobar un Parte de horas sin confirmar."
 
 #. module: hr_timesheet_sheet
-#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:589
+#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:593
 #, python-format
 msgid "Cannot reject a non-submitted sheet."
 msgstr "No es posible rechazar una hoja de servicios sin confirmar."
 
 #. module: hr_timesheet_sheet
-#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:563
+#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:567
 #, python-format
 msgid "Cannot revert to draft a non-approved sheet."
 msgstr ""
@@ -311,26 +321,20 @@ msgstr "Empleados"
 #: model_terms:ir.actions.act_window,help:hr_timesheet_sheet.act_hr_timesheet_sheet_to_review
 msgid ""
 "Employees must record timesheets every day and confirm at the end\n"
-"            of the repording period. Once the timesheet sheet is confirmed, "
+"            of the reporting period. Once the timesheet sheet is confirmed, "
 "it should be\n"
 "            validated by a reviewer."
 msgstr ""
-"Los empleados deben registrar partes de horas todos los días\n"
-"y confirmar sus hojas de servicio al final de cada periodo. Una vez\n"
-"que la hoja de servicios está confirmada debería ser validada por un revisor."
 
 #. module: hr_timesheet_sheet
 #: model_terms:ir.actions.act_window,help:hr_timesheet_sheet.act_hr_timesheet_sheet_all_timesheets
 msgid ""
 "Employees must record timesheets in the sheet every day and confirm at the "
 "end\n"
-"             of the repording period. Once the timesheet sheet is confirmed, "
+"             of the reporting period. Once the timesheet sheet is confirmed, "
 "it should be\n"
 "             validated by a reviewer."
 msgstr ""
-"Usted debe grabar los parte de horas cada día y confirmarlos al final \n"
-"de la semana. Una vez que los parte de horas sean confirmadas, deben\n"
-"ser validadas por el administrador."
 
 #. module: hr_timesheet_sheet
 #: model:ir.model.fields,field_description:hr_timesheet_sheet.field_hr_timesheet_sheet__message_follower_ids
@@ -420,7 +424,7 @@ msgid "In Draft"
 msgstr "En borrador"
 
 #. module: hr_timesheet_sheet
-#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:494
+#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:498
 #, python-format
 msgid ""
 "In order to create a sheet for this employee, you must link him/her to an "
@@ -429,7 +433,7 @@ msgstr ""
 "Para crear una hoja para este empleado, debe enlazarlo con un usuario: %s"
 
 #. module: hr_timesheet_sheet
-#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:603
+#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:607
 #, python-format
 msgid ""
 "In order to review a timesheet sheet, your user needs to be linked to an "
@@ -573,7 +577,7 @@ msgid "Number of unread messages"
 msgstr "Total de mensajes sin leer"
 
 #. module: hr_timesheet_sheet
-#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:613
+#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:617
 #, python-format
 msgid "Only a HR Officer or Manager can review the sheet."
 msgstr "Sólo un Oficals o Responsable de RRHH puede revisar la hoja."
@@ -660,7 +664,7 @@ msgid "Saturday"
 msgstr "Sábado"
 
 #. module: hr_timesheet_sheet
-#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:926
+#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:930
 #, python-format
 msgid "Save the Timesheet Sheet first."
 msgstr "Guarde primero la Hoja de Servicios."
@@ -701,6 +705,12 @@ msgid "Sheet"
 msgstr "Hoja"
 
 #. module: hr_timesheet_sheet
+#: model:ir.model.fields,field_description:hr_timesheet_sheet.field_account_analytic_line__sheet_state
+#: model:ir.model.fields,field_description:hr_timesheet_sheet.field_hr_timesheet_switch__sheet_state
+msgid "Sheet State"
+msgstr ""
+
+#. module: hr_timesheet_sheet
 #: model:ir.model.fields,help:hr_timesheet_sheet.field_res_config_settings__timesheet_week_start
 msgid "Starting day for Timesheet Sheets."
 msgstr "Día de comienzo de las Hojas de Servicios."
@@ -722,12 +732,6 @@ msgstr ""
 "Atrasado: La fecha ya ha pasado\n"
 "Hoy: La actividad es para hoy\n"
 "Planeada: Actividades futuras."
-
-#. module: hr_timesheet_sheet
-#: model:ir.model.fields,field_description:hr_timesheet_sheet.field_account_analytic_line__sheet_state
-#: model:ir.model.fields,field_description:hr_timesheet_sheet.field_hr_timesheet_switch__sheet_state
-msgid "Steet State"
-msgstr "Estado de la hoja"
 
 #. module: hr_timesheet_sheet
 #: model_terms:ir.ui.view,arch_db:hr_timesheet_sheet.hr_timesheet_sheet_form
@@ -988,7 +992,7 @@ msgid "Waiting review"
 msgstr "Esperando revisión"
 
 #. module: hr_timesheet_sheet
-#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:925
+#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:929
 #, python-format
 msgid "Warning"
 msgstr "Alerta"
@@ -1058,7 +1062,7 @@ msgstr ""
 " - %s de %s"
 
 #. module: hr_timesheet_sheet
-#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:535
+#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:539
 #, python-format
 msgid ""
 "You cannot delete a timesheet sheet which is already submitted or confirmed: "
@@ -1067,7 +1071,7 @@ msgstr ""
 "No puede eliminar una hoja de servicios que ya está enviada o confirmada: %s"
 
 #. module: hr_timesheet_sheet
-#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:506
+#: code:addons/hr_timesheet_sheet/models/hr_timesheet_sheet.py:510
 #, python-format
 msgid "You cannot duplicate a sheet."
 msgstr "No puede duplicar una hoja de servicios."
@@ -1097,32 +1101,75 @@ msgstr "No puede modificar una entrada de una hoja de servicios confirmada: %s"
 #: model_terms:ir.actions.act_window,help:hr_timesheet_sheet.act_hr_timesheet_line_to_submit_my
 msgid ""
 "You must record timesheets every day and confirm at the end\n"
-"            of the repording period. Once the timesheet sheet is confirmed, "
+"            of the reporting period. Once the timesheet sheet is confirmed, "
 "it should be\n"
 "            validated by a reviewer."
 msgstr ""
-"Debe rellenar el Parte de horas todos los días y confirmarlo al final\n"
-"             del periodo. Una vez se confirmado el Parte de horas, debe ser\n"
-"             revisado por un responsable."
 
 #. module: hr_timesheet_sheet
 #: model_terms:ir.actions.act_window,help:hr_timesheet_sheet.act_hr_timesheet_sheet_my_timesheets
 msgid ""
 "You must record timesheets in the sheet every day and confirm at the end\n"
-"             of the repording period. Once the timesheet sheet is confirmed, "
+"             of the reporting period. Once the timesheet sheet is confirmed, "
 "it should be\n"
 "             validated by a reviewer."
 msgstr ""
-"Debe registrar los partes de horas de la hoja cada día y confirmarlos al "
-"final\n"
-"del periodo de informe. Una vez que la hoja de servicios está confirmada, "
-"debería\n"
-"ser validada por un revisor."
 
 #. module: hr_timesheet_sheet
 #: model_terms:ir.ui.view,arch_db:hr_timesheet_sheet.hr_timesheet_sheet_form
 msgid "to"
 msgstr "a"
+
+#~ msgid ""
+#~ "Employees must record timesheets every day and confirm at the end\n"
+#~ "            of the repording period. Once the timesheet sheet is "
+#~ "confirmed, it should be\n"
+#~ "            validated by a reviewer."
+#~ msgstr ""
+#~ "Los empleados deben registrar partes de horas todos los días\n"
+#~ "y confirmar sus hojas de servicio al final de cada periodo. Una vez\n"
+#~ "que la hoja de servicios está confirmada debería ser validada por un "
+#~ "revisor."
+
+#~ msgid ""
+#~ "Employees must record timesheets in the sheet every day and confirm at "
+#~ "the end\n"
+#~ "             of the repording period. Once the timesheet sheet is "
+#~ "confirmed, it should be\n"
+#~ "             validated by a reviewer."
+#~ msgstr ""
+#~ "Usted debe grabar los parte de horas cada día y confirmarlos al final \n"
+#~ "de la semana. Una vez que los parte de horas sean confirmadas, deben\n"
+#~ "ser validadas por el administrador."
+
+#~ msgid "Steet State"
+#~ msgstr "Estado de la hoja"
+
+#~ msgid ""
+#~ "You must record timesheets every day and confirm at the end\n"
+#~ "            of the repording period. Once the timesheet sheet is "
+#~ "confirmed, it should be\n"
+#~ "            validated by a reviewer."
+#~ msgstr ""
+#~ "Debe rellenar el Parte de horas todos los días y confirmarlo al final\n"
+#~ "             del periodo. Una vez se confirmado el Parte de horas, debe "
+#~ "ser\n"
+#~ "             revisado por un responsable."
+
+#~ msgid ""
+#~ "You must record timesheets in the sheet every day and confirm at the end\n"
+#~ "             of the repording period. Once the timesheet sheet is "
+#~ "confirmed, it should be\n"
+#~ "             validated by a reviewer."
+#~ msgstr ""
+#~ "Debe registrar los partes de horas de la hoja cada día y confirmarlos al "
+#~ "final\n"
+#~ "del periodo de informe. Una vez que la hoja de servicios está confirmada, "
+#~ "debería\n"
+#~ "ser validada por un revisor."
+
+#~ msgid "By HR Manager/Officer"
+#~ msgstr "Por Reponsable de RRHH"
 
 #~ msgid "Weeks"
 #~ msgstr "Semanas"

@@ -1,13 +1,14 @@
 # Copyright 2020 Brainbean Apps (https://brainbeanapps.com)
+# Copyright 2020 CorporateHub (https://corporatehub.eu)
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html).
 
 {
     'name': 'HR Timesheet Sheet Auto-draft: Project',
-    'version': '12.0.1.0.0',
+    'version': '12.0.1.0.1',
     'category': 'Human Resources',
     'website': 'https://github.com/OCA/timesheet',
     'author':
-        'Brainbean Apps, '
+        'CorporateHub, '
         'Odoo Community Association (OCA)',
     'license': 'AGPL-3',
     'installable': True,
@@ -16,5 +17,6 @@
     'depends': [
         'hr_timesheet_sheet',
         'hr_timesheet_sheet_policy_project_manager',
+        'hr_timesheet_sheet_autodraft',
     ],
 }

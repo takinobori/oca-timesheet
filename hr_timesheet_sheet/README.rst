@@ -30,7 +30,7 @@ This module supplies a new screen enabling you to manage your work encoding
 end of the defined period, employees submit their validated sheet and the
 reviewer must then approve submitted entries. Periods are defined in the
 company forms and you can set them to run monthly, weekly or daily. By default,
-policy is configured to have HR Officer/Manager as reviewer.
+policy is configured to have HR Officers as reviewers.
 
 **Table of contents**
 
@@ -56,6 +56,9 @@ If you want other default ranges different from weekly, you need to go:
 
 To change who reviews submitted sheets, go to *Configuration > Settings > Timesheet Options*
 and configure **Timesheet Sheet Review Policy** accordingly.
+
+For adding more review policies, look at the *hr_timesheet_sheet_policy_xxx*
+extra modules.
 
 Usage
 =====
@@ -92,7 +95,7 @@ Authors
 
 * Eficent
 * Onestein
-* Brainbean Apps
+* CorporateHub
 
 Contributors
 ~~~~~~~~~~~~
@@ -100,7 +103,9 @@ Contributors
 * Miquel Raïch <miquel.raich@eficent.com>
 * Andrea Stirpe <a.stirpe@onestein.nl>
 * Lois Rilo <lois.rilo@eficent.com>
-* Alexey Pelykh <alexey.pelykh@brainbeanapps.com>
+* `CorporateHub <https://corporatehub.eu/>`__
+
+  * Alexey Pelykh <alexey.pelykh@corphub.eu>
 * Dennis Sluijk <d.sluijk@onestein.nl>
 
 Maintainers
